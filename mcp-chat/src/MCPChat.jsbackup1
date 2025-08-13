@@ -1,0 +1,866 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  Settings, 
+  RefreshCw, 
+  Monitor, 
+  Server, 
+  Database, 
+  Wifi, 
+  HardDrive, 
+  Activity, 
+  AlertTriangle, 
+  CheckCircle, 
+  XCircle, 
+  Clock, 
+  Terminal, 
+  MessageSquare,
+  Layers,
+  Play,
+  Trash2,
+  RotateCcw,
+  Search,
+  Filter,
+  Download,
+  Moon,
+  Sun,
+  Maximize,
+  Bell,
+  Info
+} from 'lucide-react';
+
+const KubernetesMCPDashboard = () => {
+  // State management
+  const [currentNamespace, setCurrentNamespace] = useState('default');
+  const [namespaces, setNamespaces] = useState([]);
+  const [resources, setResources] = useState({});
+  const [clusterHealth, setClusterHealth] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeView, setActiveView] = useState('dashboard');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [notifications, setNotifications] = useState([]);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [aiResponse, setAiResponse] = useState('');
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  
+  const wsRef = useRef(null);
+  
+  // API Configuration
+  const API_BASE = 'http://4.231.42.99:8000';
+  const WS_URL = 'ws://4.231.42.99:8000/ws';
+
+  // WebSocket connection
+  useEffect(() => {
+    const connectWebSocket = () => {
+      try {
+        wsRef.current = new WebSocket(WS_URL);
+        
+        wsRef.current.onopen = () => {
+          setWsConnected(true);
+          addNotification('Connected to Kubernetes MCP Server', 'success');
+        };
+        
+        wsRef.current.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          handleWebSocketMessage(data);
+        };
+        
+        wsRef.current.onclose = () => {
+          setWsConnected(false);
+          // Attempt to reconnect after 3 seconds
+          setTimeout(connectWebSocket, 3000);
+        };
+        
+        wsRef.current.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setWsConnected(false);
+        };
+      } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+      }
+    };
+
+    connectWebSocket();
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  // Handle WebSocket messages
+  const handleWebSocketMessage = (data) => {
+    switch (data.type) {
+      case 'command_result':
+        setResources(prev => ({ ...prev, [data.result.type]: data.result.data }));
+        break;
+      case 'auto_healing':
+        addNotification(`Auto-healing: ${data.message}`, 'info');
+        break;
+      case 'gpt_response':
+        setAiResponse(data.answer);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // API calls
+  const apiCall = async (endpoint, options = {}) => {
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        ...options,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error(`API call failed for ${endpoint}:`, error);
+      addNotification(`API Error: ${error.message}`, 'error');
+      throw error;
+    }
+  };
+
+  // Load namespaces
+  const loadNamespaces = useCallback(async () => {
+    try {
+      const response = await apiCall('/api/namespaces');
+      setNamespaces([
+        { name: 'all', display: 'All Namespaces', pod_count: 0, running_pods: 0 },
+        ...response.namespaces
+      ]);
+    } catch (error) {
+      console.error('Failed to load namespaces:', error);
+    }
+  }, []);
+
+  // Execute command
+  const executeCommand = async (command, namespace = currentNamespace) => {
+    setIsLoading(true);
+    try {
+      const response = await apiCall('/api/command', {
+        method: 'POST',
+        body: JSON.stringify({ command, namespace }),
+      });
+      
+      if (response.success) {
+        setResources(prev => ({ 
+          ...prev, 
+          [response.data.type]: response.data.data 
+        }));
+        setActiveView(response.data.type);
+        addNotification(`Command '${command}' executed successfully`, 'success');
+      } else {
+        addNotification(`Command failed: ${response.message}`, 'error');
+      }
+    } catch (error) {
+      addNotification(`Command execution failed: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get cluster status
+  const getClusterStatus = async () => {
+    try {
+      const status = await apiCall('/api/cluster-status');
+      setClusterHealth(status.cluster_health || {});
+    } catch (error) {
+      console.error('Failed to get cluster status:', error);
+    }
+  };
+
+  // Ask AI
+  const askAI = async (question) => {
+    if (!question.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await apiCall('/api/gpt', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          question, 
+          namespace: currentNamespace,
+          context: `Current namespace: ${currentNamespace}, Cluster health: ${clusterHealth.status || 'unknown'}`
+        }),
+      });
+      
+      setAiResponse(response.answer);
+      setShowAiPanel(true);
+      addNotification('AI response received', 'success');
+    } catch (error) {
+      addNotification(`AI request failed: ${error.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Add notification
+  const addNotification = (message, type = 'info') => {
+    const notification = {
+      id: Date.now(),
+      message,
+      type,
+      timestamp: new Date(),
+    };
+    
+    setNotifications(prev => [notification, ...prev.slice(0, 4)]);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== notification.id));
+    }, 5000);
+  };
+
+  // Initialize data
+  useEffect(() => {
+    loadNamespaces();
+    getClusterStatus();
+    
+    // Refresh data every 30 seconds
+    const interval = setInterval(() => {
+      getClusterStatus();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [loadNamespaces]);
+
+  // Filter resources
+  const filterResources = (resourceList) => {
+    if (!resourceList) return [];
+    
+    let filtered = resourceList;
+    
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter(item => 
+        item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.namespace?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Status filter
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(item => {
+        const status = item.phase || item.status || 'unknown';
+        return status.toLowerCase() === filterStatus.toLowerCase();
+      });
+    }
+    
+    return filtered;
+  };
+
+  // Status badge component
+  const StatusBadge = ({ status, type = 'default' }) => {
+    const getStatusColor = () => {
+      const statusLower = status?.toLowerCase() || '';
+      if (statusLower.includes('running') || statusLower.includes('ready') || statusLower.includes('active')) {
+        return 'bg-green-100 text-green-800 border-green-200';
+      }
+      if (statusLower.includes('pending') || statusLower.includes('waiting')) {
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      }
+      if (statusLower.includes('failed') || statusLower.includes('error') || statusLower.includes('crashloop')) {
+        return 'bg-red-100 text-red-800 border-red-200';
+      }
+      return 'bg-gray-100 text-gray-800 border-gray-200';
+    };
+
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor()}`}>
+        {status}
+      </span>
+    );
+  };
+
+  // Resource table component
+  const ResourceTable = ({ data, type }) => {
+    const filteredData = filterResources(data);
+    
+    if (!filteredData || filteredData.length === 0) {
+      return (
+        <div className="text-center py-12">
+          <Database className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No {type} found</h3>
+        </div>
+      );
+    }
+
+    const renderTableHeaders = () => {
+      switch (type) {
+        case 'pods':
+          return (
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Namespace</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Ready</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Restarts</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Age</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Node</th>
+            </tr>
+          );
+        case 'deployments':
+          return (
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Namespace</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Ready</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Available</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Age</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Strategy</th>
+            </tr>
+          );
+        case 'services':
+          return (
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Namespace</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Type</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Cluster IP</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">External IP</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Ports</th>
+            </tr>
+          );
+        case 'nodes':
+          return (
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Age</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Version</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">CPU</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Memory</th>
+            </tr>
+          );
+        default:
+          return null;
+      }
+    };
+
+    const renderTableRow = (item, index) => {
+      switch (type) {
+        case 'pods':
+          return (
+            <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.namespace}</td>
+              <td className="px-6 py-4 whitespace-nowrap"><StatusBadge status={item.phase} /></td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.ready}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.restarts}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.age}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.node || 'N/A'}</td>
+            </tr>
+          );
+        case 'deployments':
+          return (
+            <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.namespace}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.replicas}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.available}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.age}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.strategy || 'Unknown'}</td>
+            </tr>
+          );
+        case 'services':
+          return (
+            <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.namespace}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.type}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.cluster_ip}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.external_ip || 'None'}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.ports}</td>
+            </tr>
+          );
+        case 'nodes':
+          return (
+            <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
+              <td className="px-6 py-4 whitespace-nowrap"><StatusBadge status={item.status} /></td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.age}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.version}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.cpu_capacity || 'N/A'}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">{item.memory_capacity || 'N/A'}</td>
+            </tr>
+          );
+        default:
+          return null;
+      }
+    };
+
+    return (
+      <div className="flex flex-col">
+        <div className="-my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+          <div className="py-2 align-middle inline-block min-w-full sm:px-6 lg:px-8">
+            <div className="shadow overflow-hidden border-b border-gray-200 dark:border-gray-600 sm:rounded-lg">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                <thead className="bg-gray-50 dark:bg-gray-800">
+                  {renderTableHeaders()}
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-600">
+                  {filteredData.map(renderTableRow)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Dashboard component
+  const Dashboard = () => {
+    const healthColor = clusterHealth.status === 'healthy' ? 'text-green-600' : 
+                       clusterHealth.status === 'warning' ? 'text-yellow-600' : 'text-red-600';
+    
+    return (
+      <div className="space-y-6">
+        {/* Cluster Health Overview */}
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">
+              Cluster Health
+            </h3>
+            <div className={`flex items-center ${healthColor}`}>
+              {clusterHealth.status === 'healthy' ? <CheckCircle className="w-5 h-5 mr-2" /> :
+               clusterHealth.status === 'warning' ? <AlertTriangle className="w-5 h-5 mr-2" /> :
+               <XCircle className="w-5 h-5 mr-2" />}
+              <span className="font-semibold capitalize">{clusterHealth.status || 'Unknown'}</span>
+            </div>
+          </div>
+          
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="bg-gradient-to-r from-blue-400 to-blue-600 rounded-lg p-4 text-white">
+              <div className="flex items-center">
+                <Activity className="w-8 h-8 mr-3" />
+                <div>
+                  <p className="text-sm font-medium">Health Score</p>
+                  <p className="text-2xl font-bold">{clusterHealth.score || 0}/100</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-green-400 to-green-600 rounded-lg p-4 text-white">
+              <div className="flex items-center">
+                <Server className="w-8 h-8 mr-3" />
+                <div>
+                  <p className="text-sm font-medium">Nodes</p>
+                  <p className="text-2xl font-bold">
+                    {clusterHealth.nodes?.ready || 0}/{clusterHealth.nodes?.total || 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-purple-400 to-purple-600 rounded-lg p-4 text-white">
+              <div className="flex items-center">
+                <Database className="w-8 h-8 mr-3" />
+                <div>
+                  <p className="text-sm font-medium">Running Pods</p>
+                  <p className="text-2xl font-bold">{clusterHealth.pods?.running || 0}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-orange-400 to-orange-600 rounded-lg p-4 text-white">
+              <div className="flex items-center">
+                <Layers className="w-8 h-8 mr-3" />
+                <div>
+                  <p className="text-sm font-medium">Namespaces</p>
+                  <p className="text-2xl font-bold">{clusterHealth.namespaces?.total || 0}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100 mb-4">
+            Quick Actions
+          </h3>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <button
+              onClick={() => executeCommand('pods')}
+              className="flex flex-col items-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+            >
+              <Database className="w-8 h-8 text-blue-600 dark:text-blue-400 mb-2" />
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">View Pods</span>
+            </button>
+            
+            <button
+              onClick={() => executeCommand('deployments')}
+              className="flex flex-col items-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
+            >
+              <Play className="w-8 h-8 text-green-600 dark:text-green-400 mb-2" />
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Deployments</span>
+            </button>
+            
+            <button
+              onClick={() => executeCommand('services')}
+              className="flex flex-col items-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+            >
+              <Wifi className="w-8 h-8 text-purple-600 dark:text-purple-400 mb-2" />
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Services</span>
+            </button>
+            
+            <button
+              onClick={() => executeCommand('self-heal')}
+              className="flex flex-col items-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
+            >
+              <RotateCcw className="w-8 h-8 text-orange-600 dark:text-orange-400 mb-2" />
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Self-Heal</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100 mb-4">
+            Recent Notifications
+          </h3>
+          <div className="space-y-3">
+            {notifications.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-4">No recent notifications</p>
+            ) : (
+              notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`flex items-center p-3 rounded-lg ${
+                    notification.type === 'success' ? 'bg-green-50 dark:bg-green-900/20' :
+                    notification.type === 'error' ? 'bg-red-50 dark:bg-red-900/20' :
+                    'bg-blue-50 dark:bg-blue-900/20'
+                  }`}
+                >
+                  {notification.type === 'success' ? 
+                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mr-3" /> :
+                   notification.type === 'error' ? 
+                    <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 mr-3" /> :
+                    <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 mr-3" />
+                  }
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {notification.message}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {notification.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Main render
+  return (
+    <div className={`min-h-screen ${darkMode ? 'dark' : ''}`}>
+      <div className="bg-gray-100 dark:bg-gray-900 min-h-screen">
+        {/* Header */}
+        <header className="bg-white dark:bg-gray-800 shadow">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-6">
+              <div className="flex items-center">
+                <button
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                >
+                  <Settings className="w-6 h-6" />
+                </button>
+                <div className="ml-4">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    Kubernetes MCP Dashboard
+                  </h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Enhanced cluster management with AI assistance
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-4">
+                {/* Connection Status */}
+                <div className="flex items-center">
+                  <div className={`w-2 h-2 rounded-full mr-2 ${wsConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {wsConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                </div>
+                
+                {/* Namespace Selector */}
+                <select
+                  value={currentNamespace}
+                  onChange={(e) => setCurrentNamespace(e.target.value)}
+                  className="block w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  {namespaces.map((ns) => (
+                    <option key={ns.name} value={ns.name}>
+                      {ns.display || ns.name} {ns.pod_count > 0 && `(${ns.pod_count} pods)`}
+                    </option>
+                  ))}
+                </select>
+                
+                {/* Controls */}
+                <button
+                  onClick={() => {
+                    loadNamespaces();
+                    getClusterStatus();
+                    addNotification('Data refreshed', 'success');
+                  }}
+                  className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                >
+                  <RefreshCw className="w-5 h-5" />
+                </button>
+                
+                <button
+                  onClick={() => setShowAiPanel(!showAiPanel)}
+                  className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                >
+                  <MessageSquare className="w-5 h-5" />
+                </button>
+                
+                <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                >
+                  {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            {/* Sidebar */}
+            <div className={`${sidebarCollapsed ? 'lg:col-span-1' : 'lg:col-span-1'} space-y-6`}>
+              {!sidebarCollapsed && (
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Navigation</h3>
+                  <nav className="space-y-2">
+                    <button
+                      onClick={() => setActiveView('dashboard')}
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+                        activeView === 'dashboard'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <Monitor className="w-4 h-4 mr-3" />
+                      Dashboard
+                    </button>
+                    <button
+                      onClick={() => {
+                        executeCommand('pods');
+                        setActiveView('pods');
+                      }}
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+                        activeView === 'pods'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <Database className="w-4 h-4 mr-3" />
+                      Pods
+                    </button>
+                    <button
+                      onClick={() => {
+                        executeCommand('deployments');
+                        setActiveView('deployments');
+                      }}
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+                        activeView === 'deployments'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <Play className="w-4 h-4 mr-3" />
+                      Deployments
+                    </button>
+                    <button
+                      onClick={() => {
+                        executeCommand('services');
+                        setActiveView('services');
+                      }}
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+                        activeView === 'services'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <Wifi className="w-4 h-4 mr-3" />
+                      Services
+                    </button>
+                    <button
+                      onClick={() => {
+                        executeCommand('nodes');
+                        setActiveView('nodes');
+                      }}
+                      className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+                        activeView === 'nodes'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <Server className="w-4 h-4 mr-3" />
+                      Nodes
+                    </button>
+                  </nav>
+                </div>
+              )}
+
+              {/* AI Panel */}
+              {showAiPanel && (
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                    AI Assistant
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <textarea
+                        value={aiQuestion}
+                        onChange={(e) => setAiQuestion(e.target.value)}
+                        placeholder="Ask me anything about Kubernetes..."
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        rows={3}
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        askAI(aiQuestion);
+                        setAiQuestion('');
+                      }}
+                      disabled={isLoading || !aiQuestion.trim()}
+                      className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoading ? 'Asking...' : 'Ask AI'}
+                    </button>
+                    
+                    {aiResponse && (
+                      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+                          AI Response:
+                        </h4>
+                        <div className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">
+                          {aiResponse}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Main Content */}
+            <div className={`${sidebarCollapsed ? 'lg:col-span-3' : 'lg:col-span-3'}`}>
+              {/* Search and Filter Bar */}
+              {activeView !== 'dashboard' && (
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4 mb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                    <div className="flex-1 flex items-center space-x-4">
+                      <div className="relative flex-1 max-w-xs">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Search className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search resources..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="block px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value="all">All Status</option>
+                        <option value="running">Running</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed</option>
+                        <option value="ready">Ready</option>
+                      </select>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-600 dark:text-gray-300">
+                        {resources[activeView] ? `${filterResources(resources[activeView]).length} items` : '0 items'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Content Area */}
+              <div className="bg-white dark:bg-gray-800 shadow rounded-lg">
+                {isLoading && (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <span className="ml-2 text-gray-600 dark:text-gray-400">Loading...</span>
+                  </div>
+                )}
+                
+                {!isLoading && (
+                  <>
+                    {activeView === 'dashboard' && <Dashboard />}
+                    {activeView === 'pods' && (
+                      <div className="p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
+                          Pods in {currentNamespace === 'all' ? 'All Namespaces' : currentNamespace}
+                        </h2>
+                        <ResourceTable data={resources.pods} type="pods" />
+                      </div>
+                    )}
+                    {activeView === 'deployments' && (
+                      <div className="p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
+                          Deployments in {currentNamespace === 'all' ? 'All Namespaces' : currentNamespace}
+                        </h2>
+                        <ResourceTable data={resources.deployments} type="deployments" />
+                      </div>
+                    )}
+                    {activeView === 'services' && (
+                      <div className="p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
+                          Services in {currentNamespace === 'all' ? 'All Namespaces' : currentNamespace}
+                        </h2>
+                        <ResourceTable data={resources.services} type="services" />
+                      </div>
+                    )}
+                    {activeView === 'nodes' && (
+                      <div className="p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
+                          Cluster Nodes
+                        </h2>
+                        <ResourceTable data={resources.nodes} type="nodes" />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default KubernetesMCPDashboard;

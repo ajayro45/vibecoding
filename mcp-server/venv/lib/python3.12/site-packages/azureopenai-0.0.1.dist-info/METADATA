@@ -1,0 +1,6 @@
+Metadata-Version: 2.1
+Name: azureopenai
+Version: 0.0.1
+Requires-Dist: aiohttp
+Requires-Dist: jsonschema
+Requires-Dist: requests

@@ -1,0 +1,38 @@
+
+# Core FastAPI and Web Framework (Required)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+aiofiles==23.2.0
+aiohttp==3.9.1
+
+# Kubernetes Client (Required)
+kubernetes==28.1.0
+
+# Data Processing (Required)
+pydantic==2.5.0
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# AI and OpenAI (Optional - will use demo mode if not available)
+openai==0.28.1
+
+# Azure SDK for FinOps (Optional - will use mock data if not available)
+azure-identity==1.15.0
+azure-mgmt-resource==23.0.1
+azure-mgmt-costmanagement==4.0.1
+azure-mgmt-monitor==6.0.2
+azure-mgmt-subscription==13.2.0
+
+# Audio Processing (Optional - for voice features)
+SpeechRecognition==3.10.0
+pydub==0.25.1
+
+# Image Processing (Optional - for image analysis)
+Pillow==10.1.0
+
+# Development and Utilities
+requests==2.31.0
+
+# Note: SQLite3 is built into Python, no need to install separately

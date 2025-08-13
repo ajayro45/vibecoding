@@ -1,0 +1,20 @@
+.command-help ul {
+  list-style-type: none;
+  padding-left: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.command-help li {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.command-help code {
+  background-color: #20232a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
