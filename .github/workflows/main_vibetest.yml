@@ -1,4 +1,4 @@
-name: Simple Python Deployment
+name: Build and deploy Full-Stack app to Azure Web App - vibetest
 
 on:
   push:
@@ -15,6 +15,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Prepare deployment files
+        run: |
+          echo "📦 Preparing deployment files..."
+          
+          # Ensure startup.sh is executable
+          chmod +x startup.sh
+          
+          # List all files being deployed
+          echo "📋 Files to deploy:"
+          find . -type f -not -path './.git/*' | head -20
+          
+          echo "📋 Key files:"
+          echo "main.py: $([ -f main.py ] && echo '✅ Found' || echo '❌ Missing')"
+          echo "requirements.txt: $([ -f requirements.txt ] && echo '✅ Found' || echo '❌ Missing')"
+          echo "package.json: $([ -f package.json ] && echo '✅ Found' || echo '❌ Missing')"
+          echo "startup.sh: $([ -f startup.sh ] && echo '✅ Found' || echo '❌ Missing')"
+          
+          if [ -f startup.sh ]; then
+            echo "📋 startup.sh permissions:"
+            ls -la startup.sh
+          fi
+          
       - name: Login to Azure
         uses: azure/login@v2
         with:
