@@ -1,5 +1,5 @@
 # .github/workflows/main_vibetest.yml
-# Complete GitHub Actions workflow for FinKubeOps Azure deployment
+# Python-only deployment (no React/Node.js)
 
 name: Build and deploy Python app to Azure Web App - vibetest
 
@@ -21,12 +21,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-
       - name: Create virtual environment and install dependencies
         run: |
           python -m venv venv
@@ -34,43 +28,35 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Node.js dependencies and build React
+      - name: Verify Python application
         run: |
-          if [ -f package.json ]; then
-            npm ci
-            npm run build
-            echo "✅ React build completed"
-            ls -la build/ || echo "No build directory"
-          else
-            echo "⚠️ No package.json found, skipping React build"
-          fi
-
-      - name: Verify files for deployment
-        run: |
-          echo "📁 Files in repository:"
-          ls -la
-          echo ""
+          source venv/bin/activate
           echo "📁 Python files:"
-          ls -la *.py || echo "No Python files found"
+          find . -name "*.py" -type f
           echo ""
-          echo "📁 Dependencies:"
-          ls -la requirements.txt || echo "No requirements.txt"
-          ls -la package.json || echo "No package.json"
+          echo "📋 Installed packages:"
+          pip list | grep -E "(fastapi|uvicorn)"
           echo ""
-          echo "📁 React build:"
-          ls -la build/ || echo "No React build"
+          echo "🧪 Testing Python syntax:"
+          python -m py_compile main.py
 
-      - name: Zip artifact for deployment
+      - name: Create deployment package (Python only)
         run: |
-          # Create deployment package including all necessary files
-          zip -r python-app.zip . \
-            --exclude=".git/*" \
-            --exclude=".github/*" \
-            --exclude="venv/*" \
-            --exclude="node_modules/*" \
-            --exclude="*.zip"
+          echo "📦 Creating Python deployment package..."
           
-          echo "📦 Created deployment package:"
+          # Include only Python files and requirements
+          mkdir -p deployment
+          cp *.py deployment/ 2>/dev/null || echo "No Python files to copy"
+          cp requirements.txt deployment/ 2>/dev/null || echo "No requirements.txt"
+          
+          cd deployment
+          echo "📋 Files in deployment package:"
+          ls -la
+          
+          zip -r ../python-app.zip .
+          cd ..
+          
+          echo "✅ Deployment package created:"
           ls -la python-app.zip
 
       - name: Upload artifact for deployment jobs
@@ -96,12 +82,17 @@ jobs:
 
       - name: Unzip artifact for deployment
         run: |
+          echo "📦 Extracting Python deployment package..."
           unzip -o python-app.zip
-          echo "📁 Extracted files:"
+          
+          echo "📁 Deployed files:"
           ls -la
-          echo ""
-          echo "📁 Python files:"
-          ls -la *.py || echo "No Python files found"
+          
+          echo "📋 Python files:"
+          ls -la *.py
+          
+          echo "📋 Requirements:"
+          cat requirements.txt
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -116,4 +107,4 @@ jobs:
         with:
           app-name: 'vibetest'
           slot-name: 'Production'
-          package: '.'  # Deploy current directory contents
+          package: '.'
