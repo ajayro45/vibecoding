@@ -46,7 +46,7 @@ jobs:
           
           # Include only Python files and requirements
           mkdir -p deployment
-          cp * deployment/
+          cp -r * deployment/
           ls -la
           
           cd deployment
@@ -107,3 +107,4 @@ jobs:
           app-name: 'vibetest'
           slot-name: 'Production'
           package: '.'
+
