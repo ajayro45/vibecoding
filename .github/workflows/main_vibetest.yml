@@ -1,6 +1,5 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
+# .github/workflows/main_vibetest.yml
+# Complete GitHub Actions workflow for FinKubeOps Azure deployment
 
 name: Build and deploy Python app to Azure Web App - vibetest
 
@@ -13,48 +12,97 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python version
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Create and start virtual environment
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Create virtual environment and install dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-        
-      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Node.js dependencies and build React
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+            npm run build
+            echo "✅ React build completed"
+            ls -la build/ || echo "No build directory"
+          else
+            echo "⚠️ No package.json found, skipping React build"
+          fi
+
+      - name: Verify files for deployment
+        run: |
+          echo "📁 Files in repository:"
+          ls -la
+          echo ""
+          echo "📁 Python files:"
+          ls -la *.py || echo "No Python files found"
+          echo ""
+          echo "📁 Dependencies:"
+          ls -la requirements.txt || echo "No requirements.txt"
+          ls -la package.json || echo "No package.json"
+          echo ""
+          echo "📁 React build:"
+          ls -la build/ || echo "No React build"
+
+      - name: Zip artifact for deployment
+        run: |
+          # Create deployment package including all necessary files
+          zip -r python-app.zip . \
+            --exclude=".git/*" \
+            --exclude=".github/*" \
+            --exclude="venv/*" \
+            --exclude="node_modules/*" \
+            --exclude="*.zip"
+          
+          echo "📦 Created deployment package:"
+          ls -la python-app.zip
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: |
-            .
-            !venv/
+          path: python-app.zip
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: python-app
-      
+
+      - name: Unzip artifact for deployment
+        run: |
+          unzip -o python-app.zip
+          echo "📁 Extracted files:"
+          ls -la
+          echo ""
+          echo "📁 Python files:"
+          ls -la *.py || echo "No Python files found"
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -68,4 +116,4 @@ jobs:
         with:
           app-name: 'vibetest'
           slot-name: 'Production'
-          
+          package: '.'  # Deploy current directory contents
