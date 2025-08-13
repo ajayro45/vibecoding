@@ -39,4 +39,4 @@ fi
 
 # Start your server exactly as you want
 echo "🎯 Starting uvicorn mcp_server:app on port $PORT"
-exec uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info
+exec uvicorn mcp_server:app --host 0.0.0.0 --port $PORT --log-level info
