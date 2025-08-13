@@ -40,30 +40,14 @@ jobs:
           echo "🧪 Testing Python syntax:"
           python -m py_compile main.py
 
-      - name: Create deployment package (Python only)
-        run: |
-          echo "📦 Creating Python deployment package..."
-          
-          # Include only Python files and requirements
-          mkdir -p deployment
-          cp -r * deployment/
-          ls -la
-          
-          cd deployment
-          echo "📋 Files in deployment package:"
-          ls -la
-          
-          zip -r ../python-app.zip .
-          cd ..
-          
-          echo "✅ Deployment package created:"
-          ls -la python-app.zip
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: python-app.zip
+          path: |
+            .
+            !venv/ 
 
   deploy:
     runs-on: ubuntu-latest
@@ -80,8 +64,7 @@ jobs:
       - name: Unzip artifact for deployment
         run: |
           echo "📦 Extracting Python deployment package..."
-          unzip -o python-app.zip
-          
+                   
           echo "📁 Deployed files:"
           ls -la
           
@@ -107,4 +90,5 @@ jobs:
           app-name: 'vibetest'
           slot-name: 'Production'
           package: '.'
+
 
