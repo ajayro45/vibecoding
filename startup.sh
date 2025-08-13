@@ -97,6 +97,9 @@ start_python_backend() {
         echo "❌ main.py not found!"
         echo "📋 Available Python files:"
         ls -la *.py 2>/dev/null || echo "No Python files found"
+        ls -lrt ../
+        ls -lrt ../../
+        ls -lrt ../../../
         exit 1
     fi
 }
