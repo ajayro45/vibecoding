@@ -1,6 +1,6 @@
 # FinKubeOps - Azure App Service
 
-�� AI-Powered Kubernetes FinOps Platform with GitHub auto-deployment.
+AI-Powered Kubernetes FinOps Platform with GitHub auto-deployment.
 
 ## Quick Setup
 
