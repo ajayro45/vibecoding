@@ -1,5 +1,4 @@
-# Python-only deployment (no React/Node.js)
-name: Build and deploy Python app to Azure Web App - vibetest
+name: Simple Python Deployment
 
 on:
   push:
@@ -8,91 +7,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python version
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          
-      - name: Create virtual environment and install dependencies
-        run: |
-          python -m venv antenv
-          source antenv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          
-      - name: Verify Python application
-        run: |
-          source antenv/bin/activate
-          echo "📁 Python files:"
-          find . -name "*.py" -type f
-          echo ""
-          echo "📋 Installed packages:"
-          pip list | grep -E "(fastapi|uvicorn)"
-          echo ""
-          echo "🧪 Testing Python syntax:"
-          python -m py_compile main.py
-          
-      - name: Create deployment package
-        run: |
-          echo "📦 Creating deployment package..."
-          
-          # Create a clean deployment directory
-          mkdir -p deployment
-          
-          # Copy all application files (excluding certain directories)
-          cp -r * deployment/ 2>/dev/null || true
-          
-          # Remove unnecessary files/directories from deployment
-          rm -rf deployment/antenv deployment/.git deployment/deployment 2>/dev/null || true
-          
-          # Ensure startup.sh has executable permissions
-          chmod +x deployment/startup.sh 2>/dev/null || true
-          
-          echo "📋 Files in deployment package:"
-          ls -la deployment/
-          
-          echo "📋 Python files in deployment:"
-          find deployment/ -name "*.py" -type f
-          
-      - name: Upload artifact for deployment jobs
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-app
-          path: ./deployment/
-
   deploy:
     runs-on: ubuntu-latest
-    needs: build
     permissions:
       id-token: write
       
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: python-app
-          
-      - name: Verify deployment package
-        run: |
-          echo "📦 Verifying deployment package..."
-          echo "📁 All files:"
-          ls -la
-          echo ""
-          echo "📋 Python files:"
-          find . -name "*.py" -type f
-          echo ""
-          echo "📋 Startup script:"
-          ls -la startup.sh 2>/dev/null || echo "startup.sh not found"
-          echo ""
-          echo "📋 Requirements:"
-          cat requirements.txt 2>/dev/null || echo "requirements.txt not found"
-          
+      - uses: actions/checkout@v4
+      
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -100,9 +22,8 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_3FF310CA572743B0A3B166D1DE7A5D04 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_ECDB79DCC6EE4746825DCD6174DA6323 }}
           
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'vibetest'
           slot-name: 'Production'
