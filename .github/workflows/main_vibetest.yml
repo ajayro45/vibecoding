@@ -46,8 +46,8 @@ jobs:
           
           # Include only Python files and requirements
           mkdir -p deployment
-          cp *.py deployment/ 2>/dev/null || echo "No Python files to copy"
-          cp requirements.txt deployment/ 2>/dev/null || echo "No requirements.txt"
+          cp * deployment/
+          ls -la
           
           cd deployment
           echo "📋 Files in deployment package:"
@@ -90,6 +90,8 @@ jobs:
           
           echo "📋 Requirements:"
           cat requirements.txt
+          cat main.py
+          cat startup.sh
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -105,4 +107,3 @@ jobs:
           app-name: 'vibetest'
           slot-name: 'Production'
           package: '.'
-
