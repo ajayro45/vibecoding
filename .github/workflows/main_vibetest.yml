@@ -68,9 +68,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    environment:
-      name: 'Production'
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     permissions:
       id-token: write
 
@@ -108,3 +105,4 @@ jobs:
           app-name: 'vibetest'
           slot-name: 'Production'
           package: '.'
+
