@@ -11,8 +11,8 @@ import {
 
 // Enhanced API Configuration
 const API_CONFIG = {
-    BASE_URL: 'http://4.231.42.99:8000',
-    WS_URL: 'ws://4.231.42.99:8000/ws',
+    BASE_URL: 'https://vibetest.azurewebsites.net',
+    WS_URL: 'ws://https://vibetest.azurewebsites.net/ws',
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000,
     REQUEST_TIMEOUT: 10000
