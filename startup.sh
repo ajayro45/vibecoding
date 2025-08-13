@@ -14,6 +14,7 @@ if [ -f "package.json" ]; then
     echo "📦 Building React frontend..."
     npm install --production
     npm run build
+    npm start
     
     if [ -d "build" ]; then
         echo "✅ React build completed"
@@ -38,4 +39,4 @@ fi
 
 # Start your server exactly as you want
 echo "🎯 Starting uvicorn mcp_server:app on port $PORT"
-exec uvicorn mcp_server:app --host 0.0.0.0 --port $PORT --log-level info
+exec uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info
